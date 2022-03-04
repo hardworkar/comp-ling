@@ -13,6 +13,7 @@ public class Main {
     public static void main(String[] args) throws IOException, XMLStreamException {
         ArrayList<String> texts = readCorpus("../../corp/corp/out.txt");
         ArrayList<ArrayList<String>> tokenized_texts = tokenize(texts);
+        System.out.println("Всего текстов: " + texts.size());
         System.out.println("Всего токенов: " + tokenized_texts.stream().map(ArrayList::size).reduce(0, Integer::sum));
 
         Dict dict = parse_dict("../../dict/annot.opcorpora.xml/dict.opcorpora.xml");
@@ -112,7 +113,7 @@ public class Main {
     public static ArrayList<String> readCorpus(String fileName) throws IOException {
         Path fName = Path.of(fileName);
         String actual = Files.readString(fName);
-        return new ArrayList<>(Arrays.stream(actual.split("\n")).toList());
+        return new ArrayList<>(Arrays.stream(actual.split("#")).toList());
     }
 
     public static Dict parse_dict(String path_to_dict) throws IOException, XMLStreamException {
