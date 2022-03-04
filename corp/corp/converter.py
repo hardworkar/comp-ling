@@ -9,4 +9,4 @@ with open(sys.argv[1], 'r') as f:
   with open('out.txt', 'w') as out:
     data = json.load(f)
     for line in data:
-      out.write(line['text'] + '\n')
+      out.write(line['text'] + '\n#\n')
