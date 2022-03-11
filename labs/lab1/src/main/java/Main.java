@@ -39,12 +39,18 @@ public class Main {
 
     private static Map<Lemma, LemmaInfo> getLemmaInfoMap(ArrayList<ArrayList<ArrayList<Lemma>>> lemmatized_texts) {
         int unsure = 0;
+        int real_solutions = 0;
+        int possible_solutions = 0;
         Map<Lemma, LemmaInfo> out_dictionary = new HashMap<>();
         for(var text : lemmatized_texts){
             for(ArrayList<Lemma> lemmas_for_word : text){
+                if(lemmas_for_word.size() > 0 && lemmas_for_word.get(0).init.t.length() > 1){
+                    real_solutions ++;
+                    possible_solutions += lemmas_for_word.size();
+                }
                 if(lemmas_for_word.size() == 1) {
-                    Lemma lemma = lemmas_for_word.get(0);
                     // неоднозначности нет
+                    Lemma lemma = lemmas_for_word.get(0);
                     if(out_dictionary.containsKey(lemma)){
                         out_dictionary.get(lemma).cnt++;
                     }
@@ -58,6 +64,7 @@ public class Main {
             }
         }
         System.out.println("Не удалось однозначно определить лемму: " + unsure);
+        System.out.println("Точность: " + (float) real_solutions / possible_solutions * 100);
         return out_dictionary;
     }
 
