@@ -14,7 +14,9 @@ public class Main {
         ArrayList<String> texts = readCorpus("../../corp/corp/out.txt");
         ArrayList<ArrayList<String>> tokenized_texts = tokenize(texts);
         System.out.println("Всего текстов: " + texts.size());
-        System.out.println("Всего токенов: " + tokenized_texts.stream().map(ArrayList::size).reduce(0, Integer::sum));
+        ArrayList<String> to_skip = new ArrayList<>(
+                Arrays.asList(",", ".", "!", ":", "?", "(", ")"));
+        System.out.println("Всего токенов: " + tokenized_texts.stream().map(x -> x.stream().filter(y -> !to_skip.contains(y)).count()).reduce(0L, Long::sum));
 
         Dict dict = parse_dict("../../dict/annot.opcorpora.xml/dict.opcorpora.xml");
         Map<String, ArrayList<Lemma>> form_to_lemmas = create_form_to_lemmas(dict.lemmata);
@@ -71,9 +73,13 @@ public class Main {
     private static ArrayList<ArrayList<ArrayList<Lemma>>> lemmatize_texts(Map<String, ArrayList<Lemma>> form_to_lemmas, ArrayList<ArrayList<String>> tokenized_texts) {
         int misses = 0;
         ArrayList<ArrayList<ArrayList<Lemma>>> lemmatized_texts = new ArrayList<>();
+        ArrayList<String> to_skip = new ArrayList<>(
+                Arrays.asList(",", ".", "!", ":", "?", "(", ")"));
         for (var text : tokenized_texts) {
             ArrayList<ArrayList<Lemma>> lemmas_for_text = new ArrayList<>();
             for (String word : text) {
+                if(to_skip.contains(word))
+                    continue;
                 if (form_to_lemmas.containsKey(word)) {
                     // словоформа есть в словаре
                     lemmas_for_text.add(form_to_lemmas.get(word));
@@ -109,10 +115,20 @@ public class Main {
 
     private static ArrayList<ArrayList<String>> tokenize(ArrayList<String> texts) {
         ArrayList<ArrayList<String>> out = new ArrayList<>();
-        for(var text : texts){
-            out.add(new ArrayList<>(Arrays.stream(text.split("[^а-яА-Я0-9']")).
-                    filter(x -> x.length() > 0).
-                    map(x -> x.toLowerCase(Locale.ROOT)).toList()));
+        for(var text : texts) {
+            out.add(new ArrayList<>(Arrays.stream(
+                            text
+                            .replace(",", "#,#")
+                            .replace(".", "#.#")
+                            .replace("!", "#!#")
+                            .replace("?", "#?#")
+                            .replace("'", "#?#")
+                            .replace("(", "#(#")
+                            .replace(")", "#)#")
+                            .split("\\s+|#"))
+                            .map(String::trim)
+                            .filter(x -> x.length() > 0)
+                            .map(x -> x.toLowerCase(Locale.ROOT)).toList()));
         }
         return out;
     }
