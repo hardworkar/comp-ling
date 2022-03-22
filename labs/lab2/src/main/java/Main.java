@@ -8,27 +8,81 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class Main {
+    static ArrayList<String> to_skip = new ArrayList<>(
+            Arrays.asList(",", ".", "!", ":", "?", "(", ")", "\"", ";", "«", "»", ";", "/"));
     public static void main(String[] args) throws IOException, XMLStreamException {
         ArrayList<String> texts = readCorpus("../../corp/corp/out.txt");
-        ArrayList<ArrayList<String>> tokenized_texts = tokenize(texts);
+        ArrayList<ArrayList<String>> tokenized_texts = new ArrayList<>();
+        for(var text : texts){
+            tokenized_texts.add(tokenize(text));
+        }
         System.out.println("Всего текстов: " + texts.size());
-        ArrayList<String> to_skip = new ArrayList<>(
-                Arrays.asList(",", ".", "!", ":", "?", "(", ")"));
         System.out.println("Всего токенов: " + tokenized_texts.stream().map(x -> x.stream().filter(y -> !to_skip.contains(y)).count()).reduce(0L, Long::sum));
 
         Dict dict = parse_dict("../../dict/annot.opcorpora.xml/dict.opcorpora.xml");
         Map<String, ArrayList<Lemma>> form_to_lemmas = create_form_to_lemmas(dict.lemmata);
 
-        var lemmatized_texts = lemmatize_texts(form_to_lemmas, tokenized_texts);
+        ArrayList<ArrayList<WordInText>> lemmatized_texts = new ArrayList<>();
+        for(var tokenized_text : tokenized_texts){
+            lemmatized_texts.add(dumb_lemmatize_text(form_to_lemmas, tokenized_text));
+        }
 
-        Map<Lemma, LemmaInfo> out_dictionary = getLemmaInfoMap(lemmatized_texts);
+        int context_length = 3;
+        String input = "огород";
+        var lemmatized_input = dumb_lemmatize_text(form_to_lemmas, tokenize(input));
+        for(var ltext : lemmatized_texts){
+            boolean ltext_contains_phrase = false;
+            for(int i = 0 ; i < ltext.size() - lemmatized_input.size() ; i++){
+                // compare window [i; i+lemmatized_input.size)
+                boolean bad = false;
+                for(int j = i ; j < i + lemmatized_input.size() ; j++){
+                    if(ltext.get(j).word.equals(lemmatized_input.get(j-i).word)){
+                        continue;
+                    }
+                    boolean equal = ltext.get(j).possible_lemmas != null &&
+                            lemmatized_input.get(j-i).possible_lemmas != null;
+                    if(!equal){
+                        bad = true;
+                        break;
+                    }
+                    var text_lemmas = ltext.get(j).possible_lemmas;
+                    var input_lemmas = lemmatized_input.get(j-i).possible_lemmas;
+                    text_lemmas = new ArrayList<>(text_lemmas.stream().filter(x -> input_lemmas.stream().anyMatch(y -> x == y)).toList());
+                    if(text_lemmas.isEmpty()){
+                        bad = true;
+                        break;
+                    }
+                }
+                if(!bad){
+                    ltext_contains_phrase = true;
+                    // left context
+                    int c = i;
+                    System.out.print("< ");
+                    ArrayList<String> left_context = new ArrayList<>();
+                    while(c >= 0 && !to_skip.contains(ltext.get(c).word) && (i - c < context_length)){
+                        left_context.add(ltext.get(c).word);
+                        c--;
+                    }
+                    Collections.reverse(left_context);
+                    left_context.forEach(x -> System.out.print(x + " "));
 
-        ArrayList<LemmaInfo> sorted = new ArrayList<>(out_dictionary.values());
-        Collections.sort(sorted);
+                    // right context
+                    c = i;
+                    System.out.print("\n> ");
+                    while(c < ltext.size() && !to_skip.contains(ltext.get(c).word) && (c - i < context_length)){
+                        System.out.print(ltext.get(c).word + " ");
+                        c++;
+                    }
+                    System.out.println();
+                }
+            }
+            if(ltext_contains_phrase){
+            }
+        }
 
-        write_out(sorted);
     }
 
     private static void write_out(ArrayList<LemmaInfo> sorted) throws IOException {
@@ -39,58 +93,17 @@ public class Main {
         }
     }
 
-    private static Map<Lemma, LemmaInfo> getLemmaInfoMap(ArrayList<ArrayList<ArrayList<Lemma>>> lemmatized_texts) {
-        int unsure = 0;
-        int real_solutions = 0;
-        int possible_solutions = 0;
-        Map<Lemma, LemmaInfo> out_dictionary = new HashMap<>();
-        for(var text : lemmatized_texts){
-            for(ArrayList<Lemma> lemmas_for_word : text){
-                if(lemmas_for_word.size() > 0 && lemmas_for_word.get(0).init.t.length() > 1){
-                    real_solutions ++;
-                    possible_solutions += lemmas_for_word.size();
-                }
-                if(lemmas_for_word.size() == 1) {
-                    // неоднозначности нет
-                    Lemma lemma = lemmas_for_word.get(0);
-                    if(out_dictionary.containsKey(lemma)){
-                        out_dictionary.get(lemma).cnt++;
-                    }
-                    else{
-                        out_dictionary.put(lemma, new LemmaInfo(lemma));
-                    }
-                }
-                else{
-                    unsure++;
-                }
+    private static ArrayList<WordInText> dumb_lemmatize_text(Map<String, ArrayList<Lemma>> form_to_lemmas, ArrayList<String> tokenized_text) {
+        ArrayList<WordInText> lemmatized_text = new ArrayList<>();
+        for (String word : tokenized_text) {
+            if(to_skip.contains(word) || !form_to_lemmas.containsKey(word)) {
+                lemmatized_text.add(new WordInText(word, null));
+            }
+            else {
+                lemmatized_text.add(new WordInText(word, form_to_lemmas.get(word)));
             }
         }
-        System.out.println("Не удалось однозначно определить лемму: " + unsure);
-        System.out.println("Точность: " + (float) real_solutions / possible_solutions * 100);
-        return out_dictionary;
-    }
-
-    private static ArrayList<ArrayList<ArrayList<Lemma>>> lemmatize_texts(Map<String, ArrayList<Lemma>> form_to_lemmas, ArrayList<ArrayList<String>> tokenized_texts) {
-        int misses = 0;
-        ArrayList<ArrayList<ArrayList<Lemma>>> lemmatized_texts = new ArrayList<>();
-        ArrayList<String> to_skip = new ArrayList<>(
-                Arrays.asList(",", ".", "!", ":", "?", "(", ")"));
-        for (var text : tokenized_texts) {
-            ArrayList<ArrayList<Lemma>> lemmas_for_text = new ArrayList<>();
-            for (String word : text) {
-                if(to_skip.contains(word))
-                    continue;
-                if (form_to_lemmas.containsKey(word)) {
-                    // словоформа есть в словаре
-                    lemmas_for_text.add(form_to_lemmas.get(word));
-                } else {
-                    misses++;
-                }
-            }
-            lemmatized_texts.add(lemmas_for_text);
-        }
-        System.out.println("Не распознано токенов: " + misses);
-        return lemmatized_texts;
+        return lemmatized_text;
     }
 
     private static Map<String, ArrayList<Lemma>> create_form_to_lemmas(ArrayList<Lemma> lemmata) {
@@ -113,24 +126,17 @@ public class Main {
         return form_to_lemmas;
     }
 
-    private static ArrayList<ArrayList<String>> tokenize(ArrayList<String> texts) {
-        ArrayList<ArrayList<String>> out = new ArrayList<>();
-        for(var text : texts) {
-            out.add(new ArrayList<>(Arrays.stream(
-                            text
-                            .replace(",", "#,#")
-                            .replace(".", "#.#")
-                            .replace("!", "#!#")
-                            .replace("?", "#?#")
-                            .replace("'", "#?#")
-                            .replace("(", "#(#")
-                            .replace(")", "#)#")
-                            .split("\\s+|#"))
-                            .map(String::trim)
-                            .filter(x -> x.length() > 0)
-                            .map(x -> x.toLowerCase(Locale.ROOT)).toList()));
+    private static ArrayList<String> tokenize(String text) {
+        String modified = text;
+        for(String del : to_skip) {
+            modified = modified.replace(del, "#" + del + "#");
         }
-        return out;
+        var tokens = new ArrayList<>(Arrays.asList(modified.split("\\s+|#")));
+        return tokens.stream()
+                .map(String::trim)
+                .filter(x -> x.length() > 0)
+                .filter(x -> !x.matches(".*[a-zA-Z]+.*"))
+                .map(x -> x.toLowerCase(Locale.ROOT)).collect(Collectors.toCollection(ArrayList::new));
     }
 
     public static ArrayList<String> readCorpus(String fileName) throws IOException {
