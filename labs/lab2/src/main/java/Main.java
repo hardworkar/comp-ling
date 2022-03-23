@@ -33,31 +33,13 @@ public class Main {
         int context_length = 3;
         String input = "огород";
         var lemmatized_input = dumb_lemmatize_text(form_to_lemmas, tokenize(input));
+        Map<ArrayList<String>, Integer> left_context_stats = new HashMap<>();
+        Map<ArrayList<String>, Integer> right_context_stats = new HashMap<>();
         for(var ltext : lemmatized_texts){
-            boolean ltext_contains_phrase = false;
             for(int i = 0 ; i < ltext.size() - lemmatized_input.size() ; i++){
                 // compare window [i; i+lemmatized_input.size)
-                boolean bad = false;
-                for(int j = i ; j < i + lemmatized_input.size() ; j++){
-                    if(ltext.get(j).word.equals(lemmatized_input.get(j-i).word)){
-                        continue;
-                    }
-                    boolean equal = ltext.get(j).possible_lemmas != null &&
-                            lemmatized_input.get(j-i).possible_lemmas != null;
-                    if(!equal){
-                        bad = true;
-                        break;
-                    }
-                    var text_lemmas = ltext.get(j).possible_lemmas;
-                    var input_lemmas = lemmatized_input.get(j-i).possible_lemmas;
-                    text_lemmas = new ArrayList<>(text_lemmas.stream().filter(x -> input_lemmas.stream().anyMatch(y -> x == y)).toList());
-                    if(text_lemmas.isEmpty()){
-                        bad = true;
-                        break;
-                    }
-                }
+                boolean bad = positionIsBad(lemmatized_input, ltext, i);
                 if(!bad){
-                    ltext_contains_phrase = true;
                     // left context
                     int c = i;
                     System.out.print("< ");
@@ -67,24 +49,48 @@ public class Main {
                         c--;
                     }
                     Collections.reverse(left_context);
-                    left_context.forEach(x -> System.out.print(x + " "));
+                    left_context_stats.putIfAbsent(left_context, 0);
+                    left_context_stats.put(left_context, left_context_stats.get(left_context) + 1);
 
                     // right context
                     c = i;
                     System.out.print("\n> ");
                     while(c < ltext.size() && !to_skip.contains(ltext.get(c).word) && (c - i < context_length)){
-                        System.out.print(ltext.get(c).word + " ");
                         c++;
                     }
-                    System.out.println();
                 }
             }
-            if(ltext_contains_phrase){
-            }
         }
-
+        var sorted_left = sort_context(left_context_stats);
+        sorted_left.forEach(x -> System.out.println(x.getKey() + ": " + x.getValue()));
     }
 
+    private static boolean positionIsBad(ArrayList<WordInText> lemmatized_input, ArrayList<WordInText> ltext, int pos) {
+        boolean bad = false;
+        for(int j = pos; j < pos + lemmatized_input.size() ; j++){
+            if(ltext.get(j).word.equals(lemmatized_input.get(j- pos).word)){
+                continue;
+            }
+            if(!(ltext.get(j).possible_lemmas != null && lemmatized_input.get(j- pos).possible_lemmas != null)){
+                bad = true;
+                break;
+            }
+            var input_lemmas = lemmatized_input.get(j- pos).possible_lemmas;
+            var text_lemmas = new ArrayList<>(ltext.get(j).possible_lemmas.stream().filter(x -> input_lemmas.stream().anyMatch(y -> x == y)).toList());
+            if(text_lemmas.isEmpty()){
+                bad = true;
+                break;
+            }
+        }
+        return bad;
+    }
+
+    private static List<Map.Entry<ArrayList<String>, Integer>> sort_context(Map<ArrayList<String>, Integer> context_stats){
+        List<Map.Entry<ArrayList<String>, Integer>> context_list = new LinkedList<>(context_stats.entrySet());
+        context_list.sort(Map.Entry.comparingByValue());
+        context_list.forEach(x -> System.out.println(x.getKey() + ": " + x.getValue()));
+        return context_list;
+    }
     private static void write_out(ArrayList<LemmaInfo> sorted) throws IOException {
         try(FileWriter fw = new FileWriter("dict.txt")) {
             for (var lemma : sorted) {
