@@ -9,9 +9,13 @@ public class Lemma {
         return "#lemma " + id + " " + init +
                 "\n\tforms: [" + forms + "]";
     }
+    public Lemma(){}
+    public Lemma(String init){
+        this.init = new WordForm(init);
+    }
     static class WordForm {
-        String t;
-        ArrayList<String> grammemes;
+        final String t;
+        final ArrayList<String> grammemes;
         public WordForm(String t){
            this.t = t;
            grammemes = new ArrayList<>();

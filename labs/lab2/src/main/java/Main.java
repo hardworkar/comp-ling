@@ -5,6 +5,7 @@ import javax.xml.stream.XMLStreamReader;
 import java.io.FileInputStream;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
@@ -21,6 +22,12 @@ public class Main {
         }
         System.out.println("Всего текстов: " + texts.size());
         System.out.println("Всего токенов: " + tokenized_texts.stream().map(x -> x.stream().filter(y -> !to_skip.contains(y)).count()).reduce(0L, Long::sum));
+        int context_length = 3;
+        System.out.println("Максимальный размер окна: " + context_length);
+        int threshold = 2;
+        System.out.println("Минимальный порог: " + threshold);
+        String input = "живу";
+        System.out.println("Входная фраза: \"" + input + "\"");
 
         Dict dict = parse_dict("../../dict/annot.opcorpora.xml/dict.opcorpora.xml");
         Map<String, ArrayList<Lemma>> form_to_lemmas = create_form_to_lemmas(dict.lemmata);
@@ -30,39 +37,59 @@ public class Main {
             lemmatized_texts.add(dumb_lemmatize_text(form_to_lemmas, tokenized_text));
         }
 
-        int context_length = 3;
-        String input = "огород";
         var lemmatized_input = dumb_lemmatize_text(form_to_lemmas, tokenize(input));
-        Map<ArrayList<String>, Integer> left_context_stats = new HashMap<>();
-        Map<ArrayList<String>, Integer> right_context_stats = new HashMap<>();
+        Map<ArrayList<Lemma>, Integer> left_context_stats = new HashMap<>();
+        Map<ArrayList<Lemma>, Integer> right_context_stats = new HashMap<>();
         for(var ltext : lemmatized_texts){
             for(int i = 0 ; i < ltext.size() - lemmatized_input.size() ; i++){
                 // compare window [i; i+lemmatized_input.size)
                 boolean bad = positionIsBad(lemmatized_input, ltext, i);
                 if(!bad){
-                    // left context
                     int c = i;
-                    System.out.print("< ");
-                    ArrayList<String> left_context = new ArrayList<>();
+                    ArrayList<Lemma> left_context = new ArrayList<>();
                     while(c >= 0 && !to_skip.contains(ltext.get(c).word) && (i - c < context_length)){
-                        left_context.add(ltext.get(c).word);
+                        // если это не знак препинания, там точно что-то есть
+                        add_context(left_context_stats, ltext, c, left_context, i - c, true);
                         c--;
                     }
-                    Collections.reverse(left_context);
-                    left_context_stats.putIfAbsent(left_context, 0);
-                    left_context_stats.put(left_context, left_context_stats.get(left_context) + 1);
 
-                    // right context
                     c = i;
-                    System.out.print("\n> ");
+                    ArrayList<Lemma> right_context = new ArrayList<>();
                     while(c < ltext.size() && !to_skip.contains(ltext.get(c).word) && (c - i < context_length)){
+                        add_context(right_context_stats, ltext, c, right_context, c - i, false);
                         c++;
                     }
                 }
             }
         }
         var sorted_left = sort_context(left_context_stats);
-        sorted_left.forEach(x -> System.out.println(x.getKey() + ": " + x.getValue()));
+        var sorted_right = sort_context(right_context_stats);
+        FileWriter fileWriter = new FileWriter("contexts.txt");
+        PrintWriter printWriter = new PrintWriter(fileWriter);
+        print_contexts(printWriter, sorted_left.stream().filter(x->x.getValue() > threshold).toList(), "л");
+        print_contexts(printWriter, sorted_right.stream().filter(x->x.getValue() > threshold).toList(), "п");
+        printWriter.close();
+    }
+
+    private static void print_contexts(PrintWriter printWriter, List<Map.Entry<ArrayList<Lemma>, Integer>> sorted, String prefix) {
+        for(var context : sorted){
+            printWriter.print(prefix + "> ");
+            for(var word : context.getKey()){
+                printWriter.print(word.init.t + " ");
+            }
+            printWriter.println(": " + context.getValue());
+        }
+    }
+
+    private static void add_context(Map<ArrayList<Lemma>, Integer> context_stats, ArrayList<WordInText> ltext, int c, ArrayList<Lemma> context, int dist, boolean reverse) {
+        context.add(ltext.get(c).possible_lemmas.get(0));
+        if(dist > 0){
+            var copy = new ArrayList<>(context);
+            if(reverse)
+                Collections.reverse(copy);
+            context_stats.putIfAbsent(copy, 0);
+            context_stats.put(copy, context_stats.get(copy) + 1);
+        }
     }
 
     private static boolean positionIsBad(ArrayList<WordInText> lemmatized_input, ArrayList<WordInText> ltext, int pos) {
@@ -85,25 +112,22 @@ public class Main {
         return bad;
     }
 
-    private static List<Map.Entry<ArrayList<String>, Integer>> sort_context(Map<ArrayList<String>, Integer> context_stats){
-        List<Map.Entry<ArrayList<String>, Integer>> context_list = new LinkedList<>(context_stats.entrySet());
+    private static List<Map.Entry<ArrayList<Lemma>, Integer>> sort_context(Map<ArrayList<Lemma>, Integer> context_stats){
+        List<Map.Entry<ArrayList<Lemma>, Integer>> context_list = new LinkedList<>(context_stats.entrySet());
         context_list.sort(Map.Entry.comparingByValue());
-        context_list.forEach(x -> System.out.println(x.getKey() + ": " + x.getValue()));
+        Collections.reverse(context_list);
         return context_list;
-    }
-    private static void write_out(ArrayList<LemmaInfo> sorted) throws IOException {
-        try(FileWriter fw = new FileWriter("dict.txt")) {
-            for (var lemma : sorted) {
-                fw.write(lemma.toString() + "\n");
-            }
-        }
     }
 
     private static ArrayList<WordInText> dumb_lemmatize_text(Map<String, ArrayList<Lemma>> form_to_lemmas, ArrayList<String> tokenized_text) {
         ArrayList<WordInText> lemmatized_text = new ArrayList<>();
         for (String word : tokenized_text) {
-            if(to_skip.contains(word) || !form_to_lemmas.containsKey(word)) {
+            if(to_skip.contains(word)) {
                 lemmatized_text.add(new WordInText(word, null));
+            }
+            else if (!form_to_lemmas.containsKey(word)){
+                // dummy bummy mishki gammi
+               lemmatized_text.add(new WordInText(word, new ArrayList<>(List.of(new Lemma(word)))));
             }
             else {
                 lemmatized_text.add(new WordInText(word, form_to_lemmas.get(word)));
@@ -169,16 +193,16 @@ public class Main {
                     switch (reader.getLocalName()) {
                         case "dictionary" -> {
                             assert reader.getAttributeCount() == 2;
-                            System.out.println("version: " + reader.getAttributeValue(0) + ", revision: " + reader.getAttributeValue(1));
+                            //System.out.println("version: " + reader.getAttributeValue(0) + ", revision: " + reader.getAttributeValue(1));
                         }
                         case "grammemes" -> {
-                            System.out.println("started grammemes");
+                            //System.out.println("started grammemes");
                         }
                         case "restrictions" -> {
-                            System.out.println("started restrictions");
+                            //System.out.println("started restrictions");
                         }
                         case "lemmata" -> {
-                            System.out.println("started lemmata");
+                            //System.out.println("started lemmata");
                         }
                         case "restr" -> current = parent_tag.restr;
                         case "grammeme" -> {
@@ -236,7 +260,7 @@ public class Main {
                             assert reader.getAttributeCount() == 1 && reader.getAttributeLocalName(0).equals("t");
                             current_lemma.forms.add(new Lemma.WordForm(reader.getAttributeValue(0)));
                         }
-                        default -> System.out.println("Unknown property: " + reader.getLocalName());
+                        //default -> System.out.println("Unknown property: " + reader.getLocalName());
                     }
                 }
                 case XMLStreamConstants.END_ELEMENT -> {
@@ -256,13 +280,13 @@ public class Main {
                             current = parent_tag.none;
                         }
                         case "grammemes" -> {
-                            System.out.println("finished grammemes, cnt: " + dict.grammemes.size());
+                            //System.out.println("finished grammemes, cnt: " + dict.grammemes.size());
                         }
                         case "restrictions" -> {
-                            System.out.println("finished restrictions");
+                            //System.out.println("finished restrictions");
                         }
                         case "lemmata" -> {
-                            System.out.println("finished lemmata, cnt: " + dict.lemmata.size());
+                            //System.out.println("finished lemmata, cnt: " + dict.lemmata.size());
                             return dict;
                         }
                         case "l", "f" -> {
@@ -276,7 +300,7 @@ public class Main {
                             assert current == parent_tag.grammeme;
                         }
                         default -> {
-                            System.out.println("Unknown end tag: " + reader.getLocalName());
+                            //System.out.println("Unknown end tag: " + reader.getLocalName());
                         }
                     }
                 }
