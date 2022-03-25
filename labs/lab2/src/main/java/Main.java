@@ -24,9 +24,9 @@ public class Main {
         System.out.println("Всего токенов: " + tokenized_texts.stream().map(x -> x.stream().filter(y -> !to_skip.contains(y)).count()).reduce(0L, Long::sum));
         int context_length = 3;
         System.out.println("Максимальный размер окна: " + context_length);
-        int threshold = 2;
+        int threshold = 1;
         System.out.println("Минимальный порог: " + threshold);
-        String input = "живу";
+        String input = "сад и огород";
         System.out.println("Входная фраза: \"" + input + "\"");
 
         Dict dict = parse_dict("../../dict/annot.opcorpora.xml/dict.opcorpora.xml");
@@ -45,18 +45,17 @@ public class Main {
                 // compare window [i; i+lemmatized_input.size)
                 boolean bad = positionIsBad(lemmatized_input, ltext, i);
                 if(!bad){
-                    int c = i;
+                    int c = i - 1;
                     ArrayList<Lemma> left_context = new ArrayList<>();
-                    while(c >= 0 && !to_skip.contains(ltext.get(c).word) && (i - c < context_length)){
-                        // если это не знак препинания, там точно что-то есть
-                        add_context(left_context_stats, ltext, c, left_context, i - c, true);
+                    while(c >= 0 && !to_skip.contains(ltext.get(c).word) && (i - c <= context_length)){
+                        add_context(left_context_stats, ltext, c, i - c, true, lemmatized_input, left_context);
                         c--;
                     }
 
-                    c = i;
                     ArrayList<Lemma> right_context = new ArrayList<>();
-                    while(c < ltext.size() && !to_skip.contains(ltext.get(c).word) && (c - i < context_length)){
-                        add_context(right_context_stats, ltext, c, right_context, c - i, false);
+                    c = i + lemmatized_input.size();
+                    while(c < ltext.size() && !to_skip.contains(ltext.get(c).word) && (c - i <= context_length)){
+                        add_context(right_context_stats, ltext, c, c - i, false, lemmatized_input, right_context);
                         c++;
                     }
                 }
@@ -81,12 +80,14 @@ public class Main {
         }
     }
 
-    private static void add_context(Map<ArrayList<Lemma>, Integer> context_stats, ArrayList<WordInText> ltext, int c, ArrayList<Lemma> context, int dist, boolean reverse) {
+    private static void add_context(Map<ArrayList<Lemma>, Integer> context_stats, ArrayList<WordInText> ltext, int c, int dist, boolean reverse, ArrayList<WordInText> input, ArrayList<Lemma> context) {
         context.add(ltext.get(c).possible_lemmas.get(0));
         if(dist > 0){
             var copy = new ArrayList<>(context);
             if(reverse)
                 Collections.reverse(copy);
+            var in = input.stream().map(x -> x.possible_lemmas.get(0)).collect(Collectors.toCollection(ArrayList::new));
+            copy.addAll(in);
             context_stats.putIfAbsent(copy, 0);
             context_stats.put(copy, context_stats.get(copy) + 1);
         }
