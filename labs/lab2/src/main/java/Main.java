@@ -26,7 +26,7 @@ public class Main {
         System.out.println("Максимальный размер окна: " + context_length);
         int threshold = 1;
         System.out.println("Минимальный порог: " + threshold);
-        String input = "сад и огород";
+        String input = "я хочу";
         System.out.println("Входная фраза: \"" + input + "\"");
 
         Dict dict = parse_dict("../../dict/annot.opcorpora.xml/dict.opcorpora.xml");
@@ -83,13 +83,21 @@ public class Main {
     private static void add_context(Map<ArrayList<Lemma>, Integer> context_stats, ArrayList<WordInText> ltext, int c, int dist, boolean reverse, ArrayList<WordInText> input, ArrayList<Lemma> context) {
         context.add(ltext.get(c).possible_lemmas.get(0));
         if(dist > 0){
-            var copy = new ArrayList<>(context);
-            if(reverse)
-                Collections.reverse(copy);
             var in = input.stream().map(x -> x.possible_lemmas.get(0)).collect(Collectors.toCollection(ArrayList::new));
-            copy.addAll(in);
-            context_stats.putIfAbsent(copy, 0);
-            context_stats.put(copy, context_stats.get(copy) + 1);
+            var copy = new ArrayList<>(context);
+            ArrayList<Lemma> out;
+            if(reverse) {
+                Collections.reverse(copy);
+                out = new ArrayList<>(copy);
+                out.addAll(in);
+            }
+            else{
+                out = new ArrayList<>(in);
+                out.addAll(copy);
+            }
+
+            context_stats.putIfAbsent(out, 0);
+            context_stats.put(out, context_stats.get(out) + 1);
         }
     }
 
