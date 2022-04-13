@@ -12,36 +12,58 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 public class Main {
-    static ArrayList<String> to_skip = new ArrayList<>(
+    final static ArrayList<String> to_skip = new ArrayList<>(
             Arrays.asList(",", ".", "!", ":", "?", "(", ")", "\"", ";", "«", "»", ";", "/"));
-    public static void main(String[] args) throws IOException, XMLStreamException {
-        ArrayList<String> texts = readCorpus("../../corp/corp/out.txt");
-        ArrayList<ArrayList<String>> tokenized_texts = new ArrayList<>();
-        for(var text : texts){
-            tokenized_texts.add(tokenize(text));
+    public static void main(String[] args) throws XMLStreamException {
+        ArrayList<String> texts = null;
+        try {
+            texts = readCorpus("../../corp/corp/out.txt");
+        } catch (IOException e) {
+            System.out.println("error opening input file: " + e);
         }
+        assert texts != null;
+        ArrayList<ArrayList<String>> tokenized_texts = texts.stream().map(Main::tokenize).collect(Collectors.toCollection(ArrayList::new));
+
         System.out.println("Всего текстов: " + texts.size());
         System.out.println("Всего токенов: " + tokenized_texts.stream().map(x -> x.stream().filter(y -> !to_skip.contains(y)).count()).reduce(0L, Long::sum));
         int context_length = 3;
         System.out.println("Максимальный размер окна: " + context_length);
         int threshold = 1;
         System.out.println("Минимальный порог: " + threshold);
-        String input = "я хочу";
+        String input = "я хотел";
         System.out.println("Входная фраза: \"" + input + "\"");
 
-        Dict dict = parse_dict("../../dict/annot.opcorpora.xml/dict.opcorpora.xml");
+        Dict dict = null;
+        try {
+            dict = parse_dict("../../dict/annot.opcorpora.xml/dict.opcorpora.xml");
+        } catch (IOException e) {
+            System.out.println("error opening dictionary file: " + e);
+        }
         Map<String, ArrayList<Lemma>> form_to_lemmas = create_form_to_lemmas(dict.lemmata);
 
-        ArrayList<ArrayList<WordInText>> lemmatized_texts = new ArrayList<>();
-        for(var tokenized_text : tokenized_texts){
-            lemmatized_texts.add(dumb_lemmatize_text(form_to_lemmas, tokenized_text));
-        }
+        ArrayList<ArrayList<WordInText>> lemmatized_texts = tokenized_texts.stream().map(x -> dumb_lemmatize_text(form_to_lemmas, x)).collect(Collectors.toCollection(ArrayList::new));
 
         var lemmatized_input = dumb_lemmatize_text(form_to_lemmas, tokenize(input));
+
         Map<ArrayList<Lemma>, Integer> left_context_stats = new HashMap<>();
         Map<ArrayList<Lemma>, Integer> right_context_stats = new HashMap<>();
+        countContexts(context_length, lemmatized_texts, lemmatized_input, left_context_stats, right_context_stats);
+
+        var sorted_left = sort_context(left_context_stats);
+        var sorted_right = sort_context(right_context_stats);
+
+        try(FileWriter fileWriter = new FileWriter("contexts.txt")) {
+            PrintWriter printWriter = new PrintWriter(fileWriter);
+            print_contexts(printWriter, sorted_left.stream().filter(x -> x.getValue() > threshold).toList(), "л");
+            print_contexts(printWriter, sorted_right.stream().filter(x -> x.getValue() > threshold).toList(), "п");
+        } catch (IOException e) {
+            System.out.println("error opening output file: " + e);
+        }
+    }
+
+    private static void countContexts(int context_length, ArrayList<ArrayList<WordInText>> lemmatized_texts, ArrayList<WordInText> lemmatized_input, Map<ArrayList<Lemma>, Integer> left_context_stats, Map<ArrayList<Lemma>, Integer> right_context_stats) {
         for(var ltext : lemmatized_texts){
-            for(int i = 0 ; i < ltext.size() - lemmatized_input.size() ; i++){
+            for(int i = 0; i < ltext.size() - lemmatized_input.size() ; i++){
                 // compare window [i; i+lemmatized_input.size)
                 boolean bad = positionIsBad(lemmatized_input, ltext, i);
                 if(!bad){
@@ -61,13 +83,6 @@ public class Main {
                 }
             }
         }
-        var sorted_left = sort_context(left_context_stats);
-        var sorted_right = sort_context(right_context_stats);
-        FileWriter fileWriter = new FileWriter("contexts.txt");
-        PrintWriter printWriter = new PrintWriter(fileWriter);
-        print_contexts(printWriter, sorted_left.stream().filter(x->x.getValue() > threshold).toList(), "л");
-        print_contexts(printWriter, sorted_right.stream().filter(x->x.getValue() > threshold).toList(), "п");
-        printWriter.close();
     }
 
     private static void print_contexts(PrintWriter printWriter, List<Map.Entry<ArrayList<Lemma>, Integer>> sorted, String prefix) {
