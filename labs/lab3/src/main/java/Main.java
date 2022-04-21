@@ -8,13 +8,14 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.stream.Collectors;
 
 public class Main {
     final static ArrayList<String> to_skip = new ArrayList<>(
             Arrays.asList(",", ".", "!", ":", "?", "(", ")", "\"", ";", "«", "»", ";", "/"));
-    public static void main(String[] args) throws XMLStreamException {
+    public static void main(String[] args) throws XMLStreamException, IOException {
         ArrayList<String> texts = readTextCorpus();
         ArrayList<ArrayList<String>> tokenized_texts = texts.stream().map(Main::tokenize).collect(Collectors.toCollection(ArrayList::new));
 
@@ -25,40 +26,45 @@ public class Main {
 
         ArrayList<ArrayList<ArrayList<Lemma>>> lemmatized_texts = tokenized_texts.stream().map(x -> lemmatize_text(form_to_lemmas, x)).collect(Collectors.toCollection(ArrayList::new));
 
-        int ngram_length = 2;
-        int RELATIVE_FREQ_THRESHOLD = 1;
-        int NGRAM_FREQ_THRESHOLD = 3;
-        Map<ArrayList<ArrayList<Lemma>>, NgramContext> ngram_stats = countContexts(ngram_length, lemmatized_texts);
-        var sorted_ngrams = sort_context(ngram_stats);
+        Map<Integer, Integer> number_of_ngrams = new HashMap<>();
+        Files.deleteIfExists(Paths.get("ngrams.txt"));
+        for(int ngram_length = 2 ; ngram_length < 30 ; ngram_length ++) {
+            int RELATIVE_FREQ_THRESHOLD = 1;
+            int NGRAM_ABS_FREQ_THRESHOLD = 3;
+            Map<ArrayList<ArrayList<Lemma>>, NgramContext> ngram_stats = countContexts(ngram_length, lemmatized_texts);
+            var sorted_ngrams = sort_context(ngram_stats);
 
-        var filtered_ngrams = sorted_ngrams.stream().filter(ngram -> {
-            var sorted_left = new LinkedList<>(ngram.getValue().left_expands.entrySet());
-            sorted_left.sort(Comparator.comparingInt(Map.Entry::getValue));
-            Collections.reverse(sorted_left);
+            var filtered_ngrams = sorted_ngrams.stream().filter(ngram -> {
+                var sorted_left = new LinkedList<>(ngram.getValue().left_expands.entrySet());
+                sorted_left.sort(Comparator.comparingInt(Map.Entry::getValue));
+                Collections.reverse(sorted_left);
 
-            var sorted_right = new LinkedList<>(ngram.getValue().right_expands.entrySet());
-            sorted_right.sort(Comparator.comparingInt(Map.Entry::getValue));
-            Collections.reverse(sorted_right);
+                var sorted_right = new LinkedList<>(ngram.getValue().right_expands.entrySet());
+                sorted_right.sort(Comparator.comparingInt(Map.Entry::getValue));
+                Collections.reverse(sorted_right);
 
-            Integer Fx = ngram.getValue().abs_freq;
-            Integer Fax = sorted_left.size() > 0 ? sorted_left.get(0).getValue() : 0;
-            Integer Fxb = sorted_right.size() > 0 ? sorted_right.get(0).getValue() : 0;
+                Integer Fx = ngram.getValue().abs_freq;
+                Integer Fax = sorted_left.size() > 0 ? sorted_left.get(0).getValue() : 0;
+                Integer Fxb = sorted_right.size() > 0 ? sorted_right.get(0).getValue() : 0;
 
-            /*
-            ngram.getKey().forEach(x -> System.out.print(x.get(0).init.t + " "));
-            System.out.print("[" + Fx + "]");
-            if(sorted_left.size() > 0) {
-                System.out.print(" --> ");
-                sorted_left.get(0).getKey().forEach(x -> System.out.print(x.init.t + " "));
-                ngram.getKey().forEach(x -> System.out.print(x.get(0).init.t + " "));
+                return (Fax / Fx < RELATIVE_FREQ_THRESHOLD && Fxb / Fx < RELATIVE_FREQ_THRESHOLD) && ngram.getValue().abs_freq >= NGRAM_ABS_FREQ_THRESHOLD;
+            }).toList();
+            if(filtered_ngrams.size() == 0){
+                break;
             }
-            System.out.println("[" + Fax + "]");
-            */
-            return (Fax / Fx < RELATIVE_FREQ_THRESHOLD && Fxb / Fx < RELATIVE_FREQ_THRESHOLD) && ngram.getValue().abs_freq >= NGRAM_FREQ_THRESHOLD;
-        }).toList();
+            number_of_ngrams.put(ngram_length, filtered_ngrams.size());
+            print_ngrams(prepare_ngrams(filtered_ngrams));
+        }
+        try(FileWriter fileWriter = new FileWriter("ngrams.txt", true)) {
+            PrintWriter printWriter = new PrintWriter(fileWriter);
+            printWriter.println("Всего устойчивых n-грамм: " + number_of_ngrams.values().stream().reduce(0, Integer::sum));
+            for(var nn : number_of_ngrams.entrySet()){
+               printWriter.printf("%d-грамм: %d\n", nn.getKey(), nn.getValue());
+            }
+        } catch (IOException e) {
+            System.out.println("error opening output file: " + e);
+        }
 
-
-        print_ngrams(filtered_ngrams);
     }
 
     private static Map<String, ArrayList<Lemma>> getDictionary() throws XMLStreamException {
@@ -86,12 +92,12 @@ public class Main {
             int ngram_length,
             ArrayList<ArrayList<ArrayList<Lemma>>> lemmatized_texts) {
         Map<ArrayList<ArrayList<Lemma>>, NgramContext> ngram_stats = new HashMap<>();
-        for(int txt_idx = 0 ; txt_idx < lemmatized_texts.size() ; txt_idx++){
+        for (int txt_idx = 0; txt_idx < lemmatized_texts.size(); txt_idx++) {
             var ltext = lemmatized_texts.get(txt_idx);
-            for(int i = 0; i < ltext.size() - ngram_length ; i++){
+            for (int i = 0; i < ltext.size() - ngram_length; i++) {
                 int c = i;
                 ArrayList<ArrayList<Lemma>> ngram = new ArrayList<>();
-                while(c < ltext.size() && (c - i) < ngram_length){
+                while (c < ltext.size() && (c - i) < ngram_length) {
                     ngram.add(ltext.get(c));
                     c++;
                 }
@@ -109,7 +115,7 @@ public class Main {
                 }
                 ArrayList<Lemma> right_context = new ArrayList<>();
                 ctx_idx = i + ngram_length;
-                while (ctx_idx < ltext.size() && (ctx_idx - (i+ngram_length) <= 1)) {
+                while (ctx_idx < ltext.size() && (ctx_idx - (i + ngram_length) <= 1)) {
                     right_context.add(ltext.get(ctx_idx).get(0));
                     add_context(ngram_stats.get(ngram).right_expands, ctx_idx - i, false, right_context);
                     ctx_idx++;
@@ -120,41 +126,43 @@ public class Main {
         return ngram_stats;
     }
 
-    private static void print_ngrams(List<Map.Entry<ArrayList<ArrayList<Lemma>>, NgramContext>> sorted) {
-        try(FileWriter fileWriter = new FileWriter("ngrams.txt")) {
+    record Ngram_Record(ArrayList<ArrayList<Lemma>> lemmas, int abs_freq, int text_freq, float left,
+                        float right) {
+    }
+    private static List<Ngram_Record> prepare_ngrams(List<Map.Entry<ArrayList<ArrayList<Lemma>>, NgramContext>> sorted) {
+        List<Ngram_Record> out = new ArrayList<>();
+        for (var ngram : sorted) {
+            var sorted_left = new LinkedList<>(ngram.getValue().left_expands.entrySet());
+            sorted_left.sort(Comparator.comparingInt(Map.Entry::getValue));
+            Collections.reverse(sorted_left);
+
+            var sorted_right = new LinkedList<>(ngram.getValue().right_expands.entrySet());
+            sorted_right.sort(Comparator.comparingInt(Map.Entry::getValue));
+            Collections.reverse(sorted_right);
+
+            Integer Fx = ngram.getValue().abs_freq;
+            int Fax = sorted_left.size() > 0 ? sorted_left.get(0).getValue() : 0;
+            int Fxb = sorted_right.size() > 0 ? sorted_right.get(0).getValue() : 0;
+
+            out.add(new Ngram_Record(
+                    ngram.getKey(),
+                    ngram.getValue().abs_freq,
+                    ngram.getValue().texts_mentioned.size(),
+                    Fax / (float) Fx,
+                    Fxb / (float) Fx
+            ));
+        }
+        out.sort((o1, o2) -> Float.compare(o1.left + o1.right, o2.left + o2.right));
+        return out;
+    }
+    private static void print_ngrams(List<Ngram_Record> sorted) {
+        try(FileWriter fileWriter = new FileWriter("ngrams.txt", true)) {
             PrintWriter printWriter = new PrintWriter(fileWriter);
-            printWriter.println("Всего устойчивых n-грамм: " + sorted.size());
             for(var ngram : sorted) {
-                var sorted_left = new LinkedList<>(ngram.getValue().left_expands.entrySet());
-                sorted_left.sort(Comparator.comparingInt(Map.Entry::getValue));
-                Collections.reverse(sorted_left);
-
-                var sorted_right = new LinkedList<>(ngram.getValue().right_expands.entrySet());
-                sorted_right.sort(Comparator.comparingInt(Map.Entry::getValue));
-                Collections.reverse(sorted_right);
-
-                Integer Fx = ngram.getValue().abs_freq;
-                int Fax = sorted_left.size() > 0 ? sorted_left.get(0).getValue() : 0;
-                int Fxb = sorted_right.size() > 0 ? sorted_right.get(0).getValue() : 0;
-
-                ngram.getKey().forEach(x -> printWriter.print(x.get(0).init.t + " "));
-                printWriter.print("[" + ngram.getValue().abs_freq + "] ");
-                printWriter.print("[" + ngram.getValue().texts_mentioned.size() + "] ");
-                /*
-                printWriter.print("[" + Fx + "]");
-                if(sorted_left.size() > 0) {
-                    printWriter.print(" --> ");
-                    sorted_left.get(0).getKey().forEach(x -> printWriter.print(x.init.t + " "));
-                    ngram.getKey().forEach(x -> printWriter.print(x.get(0).init.t + " "));
-                    printWriter.print("[" + Fax + "]");
-                }
-                if(sorted_right.size() > 0) {
-                    printWriter.print(" --> ");
-                    ngram.getKey().forEach(x -> printWriter.print(x.get(0).init.t + " "));
-                    sorted_right.get(0).getKey().forEach(x -> printWriter.print(x.init.t + " "));
-                    printWriter.print("[" + Fxb + "]");
-                }
-                 */
+                ngram.lemmas.forEach(x -> printWriter.print(x.get(0).init.t + " "));
+                printWriter.printf("[%d] ", ngram.abs_freq);
+                printWriter.printf("[%d] ", ngram.text_freq);
+                printWriter.printf("[%f, %f]", ngram.left, ngram.right);
                 printWriter.println();
             }
         } catch (IOException e) {
