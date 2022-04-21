@@ -25,7 +25,7 @@ public class Main {
 
         ArrayList<ArrayList<ArrayList<Lemma>>> lemmatized_texts = tokenized_texts.stream().map(x -> lemmatize_text(form_to_lemmas, x)).collect(Collectors.toCollection(ArrayList::new));
 
-        int ngram_length = 3;
+        int ngram_length = 2;
         int RELATIVE_FREQ_THRESHOLD = 1;
         int NGRAM_FREQ_THRESHOLD = 3;
         Map<ArrayList<ArrayList<Lemma>>, NgramContext> ngram_stats = countContexts(ngram_length, lemmatized_texts);
@@ -40,7 +40,7 @@ public class Main {
             sorted_right.sort(Comparator.comparingInt(Map.Entry::getValue));
             Collections.reverse(sorted_right);
 
-            Integer Fx = ngram.getValue().freq;
+            Integer Fx = ngram.getValue().abs_freq;
             Integer Fax = sorted_left.size() > 0 ? sorted_left.get(0).getValue() : 0;
             Integer Fxb = sorted_right.size() > 0 ? sorted_right.get(0).getValue() : 0;
 
@@ -54,7 +54,7 @@ public class Main {
             }
             System.out.println("[" + Fax + "]");
             */
-            return (Fax / Fx < RELATIVE_FREQ_THRESHOLD && Fxb / Fx < RELATIVE_FREQ_THRESHOLD) && ngram.getValue().freq >= NGRAM_FREQ_THRESHOLD;
+            return (Fax / Fx < RELATIVE_FREQ_THRESHOLD && Fxb / Fx < RELATIVE_FREQ_THRESHOLD) && ngram.getValue().abs_freq >= NGRAM_FREQ_THRESHOLD;
         }).toList();
 
 
@@ -86,7 +86,8 @@ public class Main {
             int ngram_length,
             ArrayList<ArrayList<ArrayList<Lemma>>> lemmatized_texts) {
         Map<ArrayList<ArrayList<Lemma>>, NgramContext> ngram_stats = new HashMap<>();
-        for(var ltext : lemmatized_texts){
+        for(int txt_idx = 0 ; txt_idx < lemmatized_texts.size() ; txt_idx++){
+            var ltext = lemmatized_texts.get(txt_idx);
             for(int i = 0; i < ltext.size() - ngram_length ; i++){
                 int c = i;
                 ArrayList<ArrayList<Lemma>> ngram = new ArrayList<>();
@@ -95,7 +96,8 @@ public class Main {
                     c++;
                 }
                 ngram_stats.putIfAbsent(ngram, new NgramContext());
-                ngram_stats.get(ngram).freq++;
+                ngram_stats.get(ngram).abs_freq++;
+                ngram_stats.get(ngram).texts_mentioned.add(txt_idx);
 
                 int ctx_idx;
                 ctx_idx = i - 1;
@@ -131,11 +133,14 @@ public class Main {
                 sorted_right.sort(Comparator.comparingInt(Map.Entry::getValue));
                 Collections.reverse(sorted_right);
 
-                Integer Fx = ngram.getValue().freq;
+                Integer Fx = ngram.getValue().abs_freq;
                 int Fax = sorted_left.size() > 0 ? sorted_left.get(0).getValue() : 0;
                 int Fxb = sorted_right.size() > 0 ? sorted_right.get(0).getValue() : 0;
 
                 ngram.getKey().forEach(x -> printWriter.print(x.get(0).init.t + " "));
+                printWriter.print("[" + ngram.getValue().abs_freq + "] ");
+                printWriter.print("[" + ngram.getValue().texts_mentioned.size() + "] ");
+                /*
                 printWriter.print("[" + Fx + "]");
                 if(sorted_left.size() > 0) {
                     printWriter.print(" --> ");
@@ -149,6 +154,7 @@ public class Main {
                     sorted_right.get(0).getKey().forEach(x -> printWriter.print(x.init.t + " "));
                     printWriter.print("[" + Fxb + "]");
                 }
+                 */
                 printWriter.println();
             }
         } catch (IOException e) {
@@ -169,7 +175,7 @@ public class Main {
 
     private static <T> List<Map.Entry<T, NgramContext>> sort_context(Map<T, NgramContext> context_stats){
         List<Map.Entry<T, NgramContext>> context_list = new LinkedList<>(context_stats.entrySet());
-        context_list.sort(Comparator.comparingInt(o -> o.getValue().freq));
+        context_list.sort(Comparator.comparingInt(o -> o.getValue().abs_freq));
         Collections.reverse(context_list);
         return context_list;
     }
