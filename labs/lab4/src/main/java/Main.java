@@ -27,7 +27,7 @@ public class Main {
 
         // getNgrams(lemmatized_texts);
 
-        ArrayList<Model> models = readModels();
+        ArrayList<Model> models = readModels(form_to_lemmas);
         Map<String, String> semantics = readSemantics();
 
         ArrayList<ArrayList<Sentence>> sentences = lemmatized_texts.stream().map(Main::get_sentences).collect(Collectors.toCollection(ArrayList::new));
@@ -78,7 +78,7 @@ public class Main {
         return sentences;
     }
 
-    private static ArrayList<Model> readModels() {
+    private static ArrayList<Model> readModels(Map<String, ArrayList<Lemma>> form_to_lemmas) {
         ArrayList<Model> models = new ArrayList<>();
         Scanner sc2 = null;
         try {
@@ -89,9 +89,25 @@ public class Main {
         while (sc2.hasNextLine()) {
             Scanner s2 = new Scanner(sc2.nextLine());
             Model model = new Model();
+            Ngram ngram = null;
             while (s2.hasNext()) {
                 String s = s2.next();
-                model.add(s);
+                if(s.equals("[")){
+                    ngram = new Ngram();
+                }
+                else if(s.equals("]")){
+                    model.ngrams.add(ngram);
+                    ngram = null;
+                }
+                else if(s.codePoints().mapToObj(c -> (char) c).allMatch(Character::isUpperCase)){
+                    model.grams.add(s);
+                }
+                else if(ngram != null){
+                    ngram.lemmas.add(lemmatize_text(form_to_lemmas, new ArrayList<>(List.of(s))).get(0).get(0));
+                }
+                else {
+                    model.add(s);
+                }
             }
             models.add(model);
         }
