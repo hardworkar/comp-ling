@@ -59,10 +59,12 @@ public class Document {
                 .map(key -> key.descriptor + "=" + frequencies.get(key))
                 .collect(Collectors.joining(", ", "{", "}"));
          */
+        /*
         String mapAsString = tf_idf.keySet().stream()
                 .map(key -> key.descriptor + "=" + tf_idf.get(key))
                 .collect(Collectors.joining(", ", "{", "}"));
-        return words.stream().map(x -> x.init.t).collect(Collectors.joining(" ")) + "\n" + mapAsString + "\n";
+        */
+        return words.stream().map(x -> x.init.t).collect(Collectors.joining(" ")) + "\n";
     }
 
     public double getCos(Document other){
